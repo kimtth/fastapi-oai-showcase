@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
 
 import sqlite3
+from datetime import datetime
 
 app = FastAPI()
 
@@ -37,12 +38,16 @@ class Message(BaseModel):
     fromWho: Literal['me', 'computer'] = 'me'
     # from_field: str = Field(None, alias='from')  # from: str
     text: Optional[str] = '_'
+    created_at: datetime
+    updated_at: datetime
 
 
 class Chat(BaseModel):
     id: Optional[int]
     name: str
     messages: Optional[list[Message]]
+    created_at: datetime
+    updated_at: datetime
 
 
 @app.on_event("startup")
@@ -116,9 +121,11 @@ async def fetch_chat():
             chat_id = result[0]
             cursor.execute('SELECT * FROM Message WHERE chat_id=?', (chat_id,))
             msg_result = cursor.fetchall()
-            msgs = [Message(chat_id=msg[0], id=msg[1], fromWho=msg[2], text=msg[3]) for msg in msg_result]
+            msgs = [
+                Message(chat_id=msg[0], id=msg[1], fromWho=msg[2], text=msg[3], created_at=msg[4], updated_at=msg[5])
+                for msg in msg_result]
 
-            chat = Chat(id=result[0], name=result[1], messages=msgs)
+            chat = Chat(id=result[0], name=result[1], messages=msgs, created_at=result[2], updated_at=result[3])
             chats.append(chat)
         return chats
     except Exception as e:
@@ -135,10 +142,12 @@ async def fetch_messages(chat_id: str):
         result = cursor.fetchone()
 
         if result:
-            cursor.execute('SELECT * FROM Message WHERE chat_id=?', (chat_id,))
+            cursor.execute('SELECT * FROM Message WHERE chat_id=? ORDER BY created_at ASC', (chat_id,))
             msg_result = cursor.fetchall()
-            msgs = [Message(chat_id=msg[0], id=msg[1], fromWho=msg[2], text=msg[3]) for msg in msg_result]
-            chat = Chat(id=result[0], name=result[1], messages=msgs)
+            msgs = [
+                Message(chat_id=msg[0], id=msg[1], fromWho=msg[2], text=msg[3], created_at=msg[4], updated_at=msg[5])
+                for msg in msg_result]
+            chat = Chat(id=result[0], name=result[1], messages=msgs, created_at=result[2], updated_at=result[3])
             return chat
         else:
             return {"error": "Chat not found"}

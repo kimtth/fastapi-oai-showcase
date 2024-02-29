@@ -1,12 +1,16 @@
 import os
+import uvicorn
+import sqlite3
 from typing import Optional, Literal
-
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
-
-import sqlite3
 from datetime import datetime
+from dotenv import load_dotenv
+from datetime import datetime
+from typing import Optional, Literal, List
+
+load_dotenv()
 
 app = FastAPI()
 
@@ -42,9 +46,10 @@ class Message(BaseModel):
     updated_at: datetime
 
 
-class Chat(BaseModel):
+class ChatRoom(BaseModel):
     id: Optional[int]
     name: str
+    prompt: Optional[str]
     messages: Optional[list[Message]]
     created_at: datetime
     updated_at: datetime
@@ -62,7 +67,7 @@ async def server_init():
                 text TEXT,
                 created_at TEXT NOT NULL DEFAULT (DATETIME('now', 'localtime')),
                 updated_at TEXT NOT NULL DEFAULT (DATETIME('now', 'localtime')),
-                FOREIGN KEY (chat_id) REFERENCES Chat(id) ON DELETE CASCADE ON UPDATE CASCADE
+                FOREIGN KEY (chat_id) REFERENCES ChatRoom(id) ON DELETE CASCADE ON UPDATE CASCADE
             );
         ''')
 
@@ -73,10 +78,15 @@ async def server_init():
             END;
         ''')
 
+        # INSERT INTO ChatRoom
+        # (id, name, prompt, created_at, updated_at)
+        # VALUES(0, 'Bot', '', DATETIME('now', 'localtime'), DATETIME('now', 'localtime'));
+
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS Chat (
+            CREATE TABLE IF NOT EXISTS ChatRoom (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT,
+                prompt TEXT,
                 created_at TEXT NOT NULL DEFAULT (DATETIME('now', 'localtime')),
                 updated_at TEXT NOT NULL DEFAULT (DATETIME('now', 'localtime'))
             );
@@ -85,7 +95,7 @@ async def server_init():
         cursor.execute('''
             CREATE TRIGGER IF NOT EXISTS trigger_chat_updated_at AFTER UPDATE ON Chat
             BEGIN
-                UPDATE Chat SET updated_at = DATETIME('now', 'localtime') WHERE rowid == NEW.rowid;
+                UPDATE ChatRoom SET updated_at = DATETIME('now', 'localtime') WHERE rowid == NEW.rowid;
             END;
         ''')
         connection.commit()
@@ -114,7 +124,7 @@ async def health_check():
 async def fetch_chat():
     cursor = connection.cursor()
     try:
-        cursor.execute('SELECT * FROM Chat')
+        cursor.execute('SELECT * FROM ChatRoom')
         results = cursor.fetchall()
         chats = []
         for result in results:
@@ -125,7 +135,7 @@ async def fetch_chat():
                 Message(chat_id=msg[0], id=msg[1], fromWho=msg[2], text=msg[3], created_at=msg[4], updated_at=msg[5])
                 for msg in msg_result]
 
-            chat = Chat(id=result[0], name=result[1], messages=msgs, created_at=result[2], updated_at=result[3])
+            chat = ChatRoom(id=result[0], name=result[1], prompt=result[2], messages=msgs, created_at=result[3], updated_at=result[4])
             chats.append(chat)
         return chats
     except Exception as e:
@@ -138,7 +148,7 @@ async def fetch_chat():
 async def fetch_messages(chat_id: str):
     cursor = connection.cursor()
     try:
-        cursor.execute('SELECT * FROM Chat WHERE id=?', (chat_id,))
+        cursor.execute('SELECT * FROM ChatRoom WHERE id=?', (chat_id,))
         result = cursor.fetchone()
 
         if result:
@@ -147,7 +157,7 @@ async def fetch_messages(chat_id: str):
             msgs = [
                 Message(chat_id=msg[0], id=msg[1], fromWho=msg[2], text=msg[3], created_at=msg[4], updated_at=msg[5])
                 for msg in msg_result]
-            chat = Chat(id=result[0], name=result[1], messages=msgs, created_at=result[2], updated_at=result[3])
+            chat = ChatRoom(id=result[0], name=result[1], prompt=result[2], messages=msgs, created_at=result[3], updated_at=result[4])
             return chat
         else:
             return {"error": "Chat not found"}
@@ -159,13 +169,13 @@ async def fetch_messages(chat_id: str):
 
 # for updating the name of a chat room
 @app.put("/chat/{chat_id}")
-async def update_chat(chat_id: str, updated_chat: Chat):
+async def update_chat(chat_id: str, updated_chat: ChatRoom):
     cursor = connection.cursor()
     try:
-        cursor.execute('SELECT * FROM Chat WHERE id=?', (chat_id,))
+        cursor.execute('SELECT * FROM ChatRoom WHERE id=?', (chat_id,))
         result = cursor.fetchone()
         if result:
-            cursor.execute('UPDATE Chat SET name=? WHERE id=?', (
+            cursor.execute('UPDATE ChatRoom SET name=? WHERE id=?', (
                 updated_chat.name, chat_id
             ))
             connection.commit()
@@ -186,7 +196,7 @@ async def add_message(chat_id: str, message: Message):
             chat_id, message.id, message.fromWho, message.text
         ))
         connection.commit()
-        return {"message": "Chat created successfully"}
+        return {"message": "ChatRoom created successfully"}
     except Exception as e:
         return {"error": e}
     finally:
@@ -194,14 +204,14 @@ async def add_message(chat_id: str, message: Message):
 
 
 @app.post("/chat")
-async def add_chatroom(chat: Chat):
+async def add_chatroom(chat: ChatRoom):
     cursor = connection.cursor()
     try:
-        rtn = cursor.execute('INSERT INTO Chat (id, name) VALUES (?, ?)', (
+        rtn = cursor.execute('INSERT INTO ChatRoom (id, name) VALUES (?, ?)', (
             chat.id, chat.name
         ))
         connection.commit()
-        return {"message": "Chat created successfully {}".format(rtn)}
+        return {"message": "ChatRoom created successfully {}".format(rtn)}
     except Exception as e:
         return {"error": e}
     finally:
@@ -212,13 +222,13 @@ async def add_chatroom(chat: Chat):
 async def delete_chatroom(chat_id: str):
     cursor = connection.cursor()
     try:
-        cursor.execute('SELECT * FROM Chat WHERE id=?', (chat_id,))
+        cursor.execute('SELECT * FROM ChatRoom WHERE id=?', (chat_id,))
         result = cursor.fetchone()
         if result:
-            cursor.execute('DELETE FROM Chat WHERE id=?', (chat_id,))
+            cursor.execute('DELETE FROM ChatRoom WHERE id=?', (chat_id,))
             # cursor.execute('DELETE FROM Message WHERE chat_id=?', (chat_id,))
             connection.commit()
-            return {"message": "Chat and Messages deleted successfully"}
+            return {"message": "ChatRoom and Messages deleted successfully"}
         else:
             return {"error": "Chat not found"}
     except Exception as e:
@@ -230,3 +240,12 @@ async def delete_chatroom(chat_id: str):
 # root_path: http://127.0.0.1:5000/api
 app.mount("/api", app)
 app.include_router(router)
+
+
+if __name__ == '__main__':
+    if os.getenv('ENV_MODE') == 'dev':
+        # app:app == filename:app <= FastAPI()
+        uvicorn.run(app='main:app', host="127.0.0.1", port=5000)
+    else:
+        # Azure App service uses 8000 as default port internally.
+        uvicorn.run(app='main:app', host="0.0.0.0", workers=4)

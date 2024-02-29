@@ -1,4 +1,8 @@
-fastapi~=0.97.0
-uvicorn[standard]~=0.22.0
-pydantic~=1.10.9
-tinydb~=4.8.0
+fastapi~=0.103.0
+uvicorn~=0.23.2
+pydantic~=1.10.14
+python-dotenv~=1.0.1
+SQLAlchemy~==2.0.27
+semantic-kernel~==0.5.1.dev0
+azure-search-documents
+openpyxl
